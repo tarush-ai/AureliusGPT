@@ -139,11 +139,10 @@ class Tokenizer:
 
         self.embeddings_path = os.path.join(self.PROJECT_ROOT, 'data/vocabulary/embeddings.npy')
 
-        if os.path.exists(self.embeddings_path):
-            self.E = np.load(self.embeddings_path)
-        else:
-            self.E = np.random.normal(0, 0.02, (len(self.vocab), self.d_model))
-            np.save(self.embeddings_path, self.E)
+        #overwriting existing embeddings (if any) during tokenization initialization loop (?)
+
+        self.E = np.random.normal(0, 0.02, (len(self.vocab), self.d_model))
+        np.save(self.embeddings_path, self.E)
         
         with open(self.rules_path, "w") as f:
             json.dump(self.rules, f)
@@ -188,6 +187,12 @@ class Tokenizer:
     def decode(self, input_nums):
         return [self.id_to_token[str(i)] for i in input_nums]
     
+
+    def embed(self, input_str):
+        encoded = self.encode(input_str)
+        X = np.ndarray([self.E[i] for i in encoded])
+        return X
+
     def tpw_ratio(self):
         words = self.words(self.meditations)
         tokens = self.tokenize(self.meditations)
