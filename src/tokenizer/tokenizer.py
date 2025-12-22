@@ -1,7 +1,7 @@
 from collections import Counter
 import numpy as np
 import re, json, os
-from config import d_model, max_seq_length, vocab_length, PROJECT_ROOT, min_freq
+from config import d_model, max_seq_length, vocab_length, PROJECT_ROOT, min_freq, n
 
 
 class Tokenizer:
@@ -13,6 +13,7 @@ class Tokenizer:
         self.vocab_length = vocab_length
         self.d_model = d_model
         self.min_freq = min_freq
+        self.n = n
 
         self.token_to_id_path = os.path.join(self.PROJECT_ROOT, "data/vocabulary/token_to_id.json")
         self.id_to_token_path = os.path.join(self.PROJECT_ROOT, "data/vocabulary/id_to_token.json")
@@ -120,7 +121,6 @@ class Tokenizer:
 
         self.vocab = vocab
 
-
     def tokenize_train(self):
         self.bpe_train()
         token_to_id = {}
@@ -139,10 +139,11 @@ class Tokenizer:
 
         self.embeddings_path = os.path.join(self.PROJECT_ROOT, 'data/vocabulary/embeddings.npy')
 
-        #overwriting existing embeddings (if any) during tokenization initialization loop (?)
-
-        self.E = np.random.normal(0, 0.02, (len(self.vocab), self.d_model))
-        np.save(self.embeddings_path, self.E)
+        if os.path.exists(self.embeddings_path):
+            self.E = np.load(self.embeddings_path)
+        else:
+            self.E = np.random.normal(0, 0.02, (len(self.vocab), self.d_model))
+            np.save(self.embeddings_path, self.E)
         
         with open(self.rules_path, "w") as f:
             json.dump(self.rules, f)
@@ -187,11 +188,19 @@ class Tokenizer:
     def decode(self, input_nums):
         return [self.id_to_token[str(i)] for i in input_nums]
     
-
-    def embed(self, input_str):
-        encoded = self.encode(input_str)
+    def embed(self, encoded):
         X = np.ndarray([self.E[i] for i in encoded])
         return X
+
+    def positional(self, encoded):
+        positionals = np.zeros(len(encoded), self.d_model)
+        for pos in range(len(encoded)):
+            for i in range(0, self.d_model, 2):
+                denominator = self.n ** (i / self.d_model)
+                positionals[pos, i] = np.sin(pos / denominator)
+                if i + 1 < self.d_model:
+                    positionals[pos, i + 1] = np.cos(pos / denominator)
+        return positionals
 
     def tpw_ratio(self):
         words = self.words(self.meditations)

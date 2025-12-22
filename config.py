@@ -11,3 +11,5 @@ num_blocks = 3
 vocab_length = 1000
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 min_freq = 30
+n = 10000
+epsilon = 10**-8
