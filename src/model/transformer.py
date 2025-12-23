@@ -1,6 +1,6 @@
 import numpy as np
 from tokenizer.tokenizer import Tokenizer
-from config import PROJECT_ROOT, d_k, d_v, d_model, d_ff, h, num_blocks, epsilon, vocab_length
+from config import PROJECT_ROOT, d_k, d_v, d_model, d_ff, h, num_blocks, epsilon, vocab_length, lr
 from util import Util
 import os
 
@@ -16,20 +16,33 @@ class Transformer:
         else:
             self.Wo = np.random.normal(0, 0.02, (d_model, vocab_length))
             np.save(self.Wo_path, self.Wo)
+        self.lr = lr
 
     def forward(self, encoded, apply_soft=False):
-        X = self.tokenizer.embed(encoded) + self.tokenizer.positional(encoded)
-
+        self.emb = self.tokenizer.embed(encoded)
+        self.pos = self.tokenizer.positional(encoded)
+        X = self.emb + self.pos
+        self.X = X
         Y = X
         for block in self.blocks:
-            Y = block.forward(Y)
+           Y = block.forward(Y)
 
         logits = Y @ self.Wo
         if apply_soft:
-            return self.util.softmax(logits, -1)
+            return self.util.softmax(logits, -1) #not training
         return logits
 
-
+    def backward(self, dL_dlogits, input_tokens):
+        dL = dL_dlogits @ self.Wo.T
+        for i in range(len(self.blocks)-1, -1, -1):
+            dL = self.blocks[i].backward(dL)
+        dL_dX = dL
+        dL_dE = np.zeros_like(self.tokenizer.E)
+        for i in range(len(self.X)):
+            dL_dE[input_tokens[i]] += dL_dX[i]
+        
+        self.tokenizer.E -= lr * dL_dE
+        
     def ce_loss(self, targets, logits):
             logits_max = np.max(logits, axis=-1, keepdims=True)
             logits_shifted = logits - logits_max
@@ -40,6 +53,14 @@ class Transformer:
             target_log_probs = log_probs[np.arange(len(targets)), targets]
             
             return -np.mean(target_log_probs)
+    
+    def ce_loss_gradient(self, output_tokens, logits):
+        probs = self.util.softmax(logits, axis=-1)
+
+        grad = probs.copy()
+        grad[np.arange(len(output_tokens)), output_tokens] -= 1
+        
+        grad = grad / len(output_tokens)
 
 class TransformerBlock:
     def __init__(self, num, path):
@@ -56,6 +77,14 @@ class TransformerBlock:
         FFN = self.ffn.forward(AddNorm)
         output = self.normtwo.forward(FFN, AddNorm)
         return output
+
+    def backward(self, dL):
+        dL_dnormtwo = self.normtwo.backward(dL)
+        dL_dffn = self.ffn.backward(dL_dnormtwo)
+        dL_dnormone = self.normone.backward(dL_dffn)
+        dL_dattention = self.attentionblock.backward(dL_dnormone)
+        return dL_dattention
+
 
 class AttentionBlock:
     def __init__(self, path):
@@ -116,6 +145,9 @@ class AttentionBlock:
         return MHA
         #add in shape assertions later down the line; ensures that training is going smoothly
 
+    def backward(self, dL_dnormone):
+        dL_dMHA = dL_dnormone 
+
 class LayerNorm:
     def __init__(self, num, path):
         numpath = "norm" + str(num)
@@ -143,6 +175,8 @@ class LayerNorm:
             norm = self.gamma * (xt - mean) / np.sqrt(stddev ** 2 + epsilon) + self.beta
             lnorm.append(norm)
         return np.array(lnorm)
+
+
         
 class FFN:
     def __init__(self, path):
