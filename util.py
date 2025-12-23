@@ -2,36 +2,18 @@ import numpy as np
 
 class Util:
     def softmax(self, n):
-        soft_n = []
-        for i  in range(len(n)):
-            row = n[i]
-            soft_row = self.softmax_row(row)
-            soft_n.append(soft_row)
-        return np.array(soft_n)
-
-    #softmax of an individual row, subtracting max
-    def softmax_row(self, n):
-        row = n
-        maxval = np.max(row)
-        exp = np.exp(row - maxval)
-        soft_n = exp / np.sum(exp)
-        return soft_n
+        max_val = np.max(n, axis=1, keepdims=True)
+        exp = np.exp(n-max_val)
+        return exp / np.sum(exp, axis=1, keepdims=True)
 
     #relu
     def relu(self, n):
-        relu_n = []
-        for i in range(len(n)):
-            n_row = []
-            for j in range(len(n[i])):
-                n_row.append(max(n[i][j], 0))
-            relu_n.append(n_row)
-        return np.array(relu_n)
+        return np.maximum(0, n) #no need for nonvectorized, slow time/space complex double loop nightmare version
 
     #derivative of relu for backpropogation
     def reluprime(self, n):
-        relu_prime = np.zeros_like(n)
-        for i in range(len(relu_prime)):
-            for j in range(len(relu_prime[i])):
-                if n[i][j] > 0: relu_prime[i][j] = 1
-                else: relu_prime[i][j] = 0
-        return relu_prime
+        return (n > 0).astype(float) #again, no need for manual reimplementation
+
+
+    def mask(self, n, m):
+        return np.triu(np.full((n,m), -np.inf), k=1)

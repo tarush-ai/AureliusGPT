@@ -1,4 +1,3 @@
-import concurrent.futures
 import numpy as np
 from tokenizer.tokenizer import Tokenizer
 from config import PROJECT_ROOT, d_k, d_v, d_model, d_ff, h, num_blocks, epsilon
@@ -12,19 +11,22 @@ class Transformer:
         self.blocks = [TransformerBlock(num, self.relpath) for num in range(num_blocks)]
 
     def forward(self, input_str):
-        self.encoded = self.tokenizer.encode(input_str)
-        self.X = self.tokenizer.embed(self.encoded) + self.tokenizer.position(self.encoded)
+        encoded = self.tokenizer.encode(input_str)
+        X = self.tokenizer.embed(encoded) + self.tokenizer.positional(encoded)
 
-        self.Y = self.blocks[0].forward(self.X)
+        Y = self.blocks[0].forward(X)
 
         for pos in range(len(self.blocks)-1):
-            self.Y = self.blocks[pos+1].forward(self.Y)
+            Y = self.blocks[pos+1].forward(Y)
         
-        return self.Y
+        return Y
 
-    def ce_loss(predicted, actual):
-        return -np.log(predicted * actual)
+    def ce_loss(self, predicted, actual):
+        return -sum(actual * np.log(predicted))
     
+
+    #note to self: CE loss is fundamentally broken, needs to be fixed after corrected forward pass (leave for now)
+
 class TransformerBlock:
     def __init__(self, num, path):
         block = "block" + str(num)
@@ -36,9 +38,9 @@ class TransformerBlock:
 
     def forward(self, X):
         MHA = self.attentionblock.forward(X)
-        AddNorm = self.norm.forward(MHA, X)
+        AddNorm = self.normone.forward(MHA, X)
         FFN = self.ffn.forward(AddNorm)
-        output = self.norm.forward(FFN, X)
+        output = self.normtwo.forward(FFN, AddNorm)
         return output
 
 class AttentionBlock:
@@ -47,7 +49,7 @@ class AttentionBlock:
 
         self.heads = [AttentionHead() for i in range(h)]
 
-        self.d_head = d_model / h
+        self.d_head = int(d_model / h)
 
         self.Wq_path = os.path.join(self.relpath, "Wq.npy")
         self.Wk_path = os.path.join(self.relpath, "Wk.npy")
@@ -84,26 +86,22 @@ class AttentionBlock:
         K = X @ self.Wk
         V = X @ self.Wv
     
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            futures = []
-            for i, head in enumerate(self.heads):
-                startindex = i * self.d_head
-                endindex = (i+1) * self.d_head - 1 
-                Qh = Q[startindex:endindex]
-                Kh = K[startindex:endindex]
-                Vh = V[startindex:endindex]
+        passes = []
+        for i, head in enumerate(self.heads):
+            startindex = i * self.d_head
+            endindex = (i+1) * self.d_head 
+            Qh = Q[:, startindex:endindex]
+            Kh = K[:, startindex:endindex]
+            Vh = V[:, startindex:endindex]
 
-                future = executor.submit(head.forward, Qh, Kh, Vh)
-                futures.append(future)
-
-        MHA = np.zeros(len(X), d_model)
-
-        for future in futures:
-            MHA.extend(future.result()) #is this correct? idk if this works for np arrays
+            passes.append(head.forward(Qh, Kh, Vh))
         
+        MHA = np.concatenate(passes, axis=1)
+
         MHA = MHA @ self.Wo
         return MHA
-            
+        #add in shape assertions later down the line; ensures that training is going smoothly
+
 class LayerNorm:
     def __init__(self, num, path):
         numpath = "norm" + str(num)
@@ -114,23 +112,23 @@ class LayerNorm:
         if os.path.exists(self.gamma_path):
             self.gamma = np.load(self.gamma_path)
         else:
-            self.gamma = np.random() #is this the right approach?
+            self.gamma = np.ones(d_model) 
             np.save(self.gamma_path, self.gamma)
         if os.path.exists(self.beta_path):
             self.beta = np.load(self.beta_path)
         else:
-            self.beta = np.random()
+            self.beta = np.zeros(d_model)
             np.save(self.beta_path, self.beta)
     
     def forward(self, pred, X):
         X = pred + X
-        lnorm = np.zeros_like(pred)
+        lnorm = []
         for xt in X:
-            mean = np.mean(X)
-            stddev = np.std(X)
+            mean = np.mean(xt)
+            stddev = np.std(xt)
             norm = self.gamma * (xt - mean) / np.sqrt(stddev ** 2 + epsilon) + self.beta
             lnorm.append(norm)
-        return lnorm
+        return np.array(lnorm)
         
 class FFN:
     def __init__(self, path):
@@ -147,18 +145,22 @@ class FFN:
             self.W1 = np.load(self.W1path)
         else:
             self.W1 = np.random.normal(0, 0.02, (d_model, d_ff))
+            np.save(self.W1path, self.W1)
         if os.path.exists(self.b1path):
             self.b1 = np.load(self.b1path)
         else:
             self.b1 = np.random.normal(0, 0.02, (d_ff,))
+            np.save(self.b1path, self.b1)
         if os.path.exists(self.W2path):
             self.W2 = np.load(self.W2path)
         else:
             self.W2 = np.random.normal(0, 0.02, (d_ff, d_model))
+            np.save(self.W2path, self.W2)
         if os.path.exists(self.b2path):
             self.b2 = np.load(self.b2path)
         else:
             self.b2 = np.random.normal(0, 0.02, (d_model,))
+            np.save(self.b2path, self.b2)
 
 
     def forward(self, X):
@@ -173,9 +175,9 @@ class AttentionHead:
     
     def forward(self, Qh, Kh, Vh):
         scores = Qh @ Kh.T
-        scores += self.util.mask(len(scores), len(scores[0]))
-        d_head = d_model / h
+        d_head = int(d_model / h)
         scores /= np.sqrt(d_head)
+        scores += self.util.mask(len(scores), len(scores[0]))
 
         attentionh = self.util.softmax(scores) @ Vh
         return attentionh    
