@@ -7,20 +7,21 @@ from config import d_model, max_seq_length, vocab_length, PROJECT_ROOT, min_freq
 class Tokenizer:
     def __init__(self):
         self.protected_tokens = set(["emphron", "sumphron", "huperphron", "nomos", "nemon", "axiopistos", "theophoretos", "oikonomian", "touto", "eferen", "auto", "eumoiros", "eudaimonia", "eupatridai", "kathoti", "katorthoseos", "kosmos", "melos", "meros", "pareilephamen", "symbainein", "tasis", "agathos", "aktines", "ekteinesthai", "daimon", "katorthoseis", "auto"])
-        self.PROJECT_ROOT = PROJECT_ROOT
-        with open(os.path.join(self.PROJECT_ROOT, "data/processed/meditations.txt"), "r") as f:
+        with open(os.path.join(PROJECT_ROOT, "data", "processed", "meditations.txt"), "r") as f:
             self.meditations = f.read()
         self.vocab_length = vocab_length
         self.d_model = d_model
         self.min_freq = min_freq
         self.n = n
 
-        self.token_to_id_path = os.path.join(self.PROJECT_ROOT, "data/vocabulary/token_to_id.json")
-        self.id_to_token_path = os.path.join(self.PROJECT_ROOT, "data/vocabulary/id_to_token.json")
-        self.rules_path = os.path.join(self.PROJECT_ROOT, "data/vocabulary/rules.json")
-        self.vocab_path = os.path.join(self.PROJECT_ROOT, "data/vocabulary/vocab.json")
+        self.token_to_id_path = os.path.join(PROJECT_ROOT, "data", "vocabulary", "token_to_id.json")
+        self.id_to_token_path = os.path.join(PROJECT_ROOT, "data", "vocabulary", "id_to_token.json")
+        self.rules_path = os.path.join(PROJECT_ROOT, "data", "vocabulary", "rules.json")
+        self.vocab_path = os.path.join(PROJECT_ROOT, "data", "vocabulary", "vocab.json")
+        self.embeddings_path = os.path.join(PROJECT_ROOT, "data", "vocabulary", "embeddings.npy")
 
-        if not (os.path.exists(self.token_to_id_path) and os.path.exists(self.id_to_token_path) and os.path.exists(self.rules_path) and os.path.exists(self.vocab_path)):
+
+        if not (os.path.exists(self.token_to_id_path) and os.path.exists(self.id_to_token_path) and os.path.exists(self.rules_path) and os.path.exists(self.vocab_path) and os.path.exists(self.embeddings_path)):
             self.tokenize_train()
         with open(self.token_to_id_path, "r") as f:
             self.token_to_id = json.load(f)
@@ -30,6 +31,7 @@ class Tokenizer:
             self.rules = json.load(f)
         with open(self.vocab_path, "r") as f:
             self.vocab = json.load(f)
+        self.E = np.load(self.embeddings_path)
             
     def words(self, text):
         newline = r"[\n]"        
@@ -138,8 +140,6 @@ class Tokenizer:
         with open(self.id_to_token_path, 'w') as file:
             json.dump(id_to_token, file)
         self.id_to_token = id_to_token
-
-        self.embeddings_path = os.path.join(self.PROJECT_ROOT, 'data/vocabulary/embeddings.npy')
 
         if os.path.exists(self.embeddings_path):
             self.E = np.load(self.embeddings_path)

@@ -4,7 +4,7 @@ class Util:
     def softmax(self, n, axis):
         max_val = np.max(n, axis, keepdims=True)
         exp = np.exp(n-max_val)
-        return exp / np.sum(exp, axis=1, keepdims=True)
+        return exp / np.sum(exp, axis, keepdims=True)
 
     #relu
     def relu(self, n):

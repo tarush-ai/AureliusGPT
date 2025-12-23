@@ -3,6 +3,7 @@ from model.transformer import Transformer
 import concurrent.futures
 import numpy as np
 from config import max_tokens_inference
+import argparse
 
 class Train:
     def __init__(self):
@@ -31,14 +32,11 @@ class Train:
             actual_token = output_tokens[i]
             losses.append(self.transformer.ce_loss(predicted_distribution, actual_token))
         
-        dL = np.mean(losses)
+        dL = np.mean(losses) #dL needs to be changed
 
         gradients = self.transformer.backward(dL)
 
         #update all gradients; that is one chunk completed
-
-
-
 
 
 class Test:
@@ -50,7 +48,7 @@ class Test:
         print("Welcome to AureliusGPT! Please press 'Enter' to break.\n\n")
         while True:
             user_input = input("User: ")
-            if user_input == " ":
+            if user_input == "":
                 break
             self.run(user_input)
 
@@ -74,15 +72,35 @@ class Test:
             tokens.append(next_token)
 
         response = self.tokenizer.decode(tokens)
-        print("AureliusGPT: " + response)
+        
+        output = ""
+
+        for token in response:
+            output += str(token)
+
+        space = "_"
+        output = output.replace("_", " ")
+
+        print("AureliusGPT: " + output)
 
 
+def main():
+    parser = argparse.ArgumentParser()
 
-if __name__ == "__train__":
-    train = Train()
-    train.train()
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    subparsers.add_parser("train")
+    subparsers.add_parser("run")
+
+    args = parser.parse_args()
+
+    if args.command == "train":
+        train = Train()
+        train.train()
+    elif args.command == "run":
+        test = Test()
+        test.main()
 
 
-elif __name__ == "__test__":
-    test = Test()
-    test.main()
+if __name__ == "__main__":
+    main()

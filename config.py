@@ -1,8 +1,8 @@
 import os
 
 d_model = 256
-d_k = 64
-d_v = 64
+d_k = 256
+d_v = 256
 h = 4
 d_ff = 1024
 max_seq_length = 512

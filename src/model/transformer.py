@@ -14,7 +14,7 @@ class Transformer:
         if os.path.exists(self.Wo_path):
             self.Wo = np.load(self.Wo_path)
         else:
-            self.Wo = np.random.normal(0, 0.02, (vocab_length, d_model))
+            self.Wo = np.random.normal(0, 0.02, (d_model, vocab_length))
             np.save(self.Wo_path, self.Wo)
 
     def forward(self, encoded):
@@ -27,7 +27,7 @@ class Transformer:
 
         logits = Y @ self.Wo
     
-        return self.util.softmax(logits)
+        return self.util.softmax(logits, -1)
 
 
     def ce_loss(self, probability, actual):
@@ -185,5 +185,5 @@ class AttentionHead:
         scores /= np.sqrt(d_head)
         scores += self.util.mask(len(scores), len(scores[0]))
 
-        attentionh = self.util.softmax(scores) @ Vh
+        attentionh = self.util.softmax(scores, -1) @ Vh
         return attentionh    
