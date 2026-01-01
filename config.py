@@ -6,18 +6,18 @@ greek_transliteration = ["emphron", "sumphron", "huperphron", "nomos", "nemon", 
 
 
 
-d_model = 256
-d_k = 256
-d_v = 256
+d_model = 128
+d_k = d_model
+d_v = d_model
 h = 4
-d_ff = 1024
-max_seq_length = 512
+d_ff = d_model * h
+max_seq_length = d_model * 2
 lr = 0.001
 num_blocks = 3
-vocab_length = 1000
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-min_freq = 30
+min_freq = 30 #tokenization
 n = 10000
-epsilon = 10**-8
+epsilon = 10**-8 #used for Adam (?)
 max_tokens_inference = 50
 temperature = 1.5
+vocab_length = 1000

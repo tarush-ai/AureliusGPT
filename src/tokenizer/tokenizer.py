@@ -1,71 +1,55 @@
 from collections import Counter
 import numpy as np
 import re, json, os
-from config import d_model, max_seq_length, vocab_length, PROJECT_ROOT, min_freq, n, greek_transliteration
+from config import d_model, max_seq_length, PROJECT_ROOT, min_freq, n, greek_transliteration, vocab_length
 from scripts.preprocess import Preprocessor
 
 class Tokenizer:
     def __init__(self):
         self.preprocess = Preprocessor()
-        self.protected_tokens = set(greek_transliteration)
         self.meditations = self.preprocess.meditations
+        protected_tokens = greek_transliteration.extend(["<BEGIN>", "<END>"])
+        self.protected_tokens = set(protected_tokens)
 
-        self.token_to_id_path = os.path.join(PROJECT_ROOT, "data", "vocabulary", "token_to_id.json")
-        self.id_to_token_path = os.path.join(PROJECT_ROOT, "data", "vocabulary", "id_to_token.json")
-        self.rules_path = os.path.join(PROJECT_ROOT, "data", "vocabulary", "rules.json")
-        self.vocab_path = os.path.join(PROJECT_ROOT, "data", "vocabulary", "vocab.json")
-        self.embeddings_path = os.path.join(PROJECT_ROOT, "data", "vocabulary", "embeddings.npy")
+        self.vocabulary_path = os.path.join(PROJECT_ROOT, "data", "vocabulary.npz")
 
+        if os.path.exists(self.vocabulary_path):
+            with np.load(self.vocabulary_path) as vocabulary:
+                self.vocab = vocabulary["vocab"]
+                self.rules = vocabulary["rules"]
+                self.id_to_token = vocabulary["id_to_token"]
+                self.token_to_id = vocabulary["token_to_id"]
+            pass
         
-        #identified the OS hell. this is the biggest problem in the current code
-        if not (os.path.exists(self.token_to_id_path) and os.path.exists(self.id_to_token_path) and os.path.exists(self.rules_path) and os.path.exists(self.vocab_path) and os.path.exists(self.embeddings_path)):
-            self.tokenize_train()
-        with open(self.token_to_id_path, "r") as f:
-            self.token_to_id = json.load(f)
-        with open(self.id_to_token_path, "r") as f:
-            self.id_to_token = json.load(f)
-        with open(self.rules_path, "r") as f:
-            self.rules = json.load(f)
-        with open(self.vocab_path, "r") as f:
-            self.vocab = json.load(f)
-        self.E = np.load(self.embeddings_path)
+        self.bpe_train()
+        np.savez(self.vocabulary_path, vocab=self.vocab, rules=self.rules, id_to_token=self.id_to_token, token_to_id=self.token_to_id)
+
             
     def words(self, text):
-        newline = r"[\n]"        
-        punctuation = r"([.,;:!?\"'])"
+        newline = r"\n"        
+        punctuation = r"([.,;:!?\"])"
         words = re.sub(newline, " ", text)
         words = re.sub(punctuation, r" \1 ", words)
         words = words.split()
-        return words
+        return [w for w in words if w not in self.protected_tokens]
 
-    def characterize(self, text, protected = None):
-        words = self.words(text)
+    def characterize(self, text):
+        chars = []
+        for word in self.words(text):
+            for char in word:
+                chars.append(char)
+        return chars
 
-        characters = []
-
-        for word in words: 
-            if protected and word.lower() not in protected:
-                characters.append("_")
-                characters.extend([char for char in word])
-            elif protected and word.lower() in protected:
-                characters.append("_")
-                characters.append(word.lower())
-            else:
-                characters.append("_")
-                characters.extend([char for char in word])
-
-        return characters 
-    
     def bpe_train(self):
-        characters = self.characterize(self.meditations, self.protected_tokens)
-        vocab = sorted(list(set(characters)))
-        vocab.append("<UNK>")
-        vocab.append("<EOS>")
-        vocab.append("<BEGIN>")
+        characters = self.characterize(self.meditations)
+        self.vocab = sorted(list(set(characters)))
+        self.vocab.append("<BEGIN>")
+        self.vocab.append("<END>")
+        self.vocab.append("<PAD>")
         
         self.rules = []
 
-        while len(vocab) < vocab_length:
+        while len(self.vocab) < vocab_length:
             
             a = 0
             pairs = []
@@ -84,19 +68,14 @@ class Tokenizer:
             rule = None
 
             for i in rules:
-                
-                #vocab based check
                 rulestr = ""
                 for char in i[0]: rulestr += char
 
-                #gain based check
-                frequency = i[1]
-
-                if rulestr in vocab or frequency < min_freq:
+                if rulestr in self.vocab:
                     continue
                 else:
                     rule = i
-                    vocab.append(rulestr)
+                    self.vocab.append(rulestr)
                     break
 
             if rule is None:
@@ -118,36 +97,6 @@ class Tokenizer:
             characters = characters2
 
             if rule: self.rules.append((rule[0])) 
-
-        self.vocab = vocab
-
-    def tokenize_train(self):
-        self.bpe_train()
-        token_to_id = {}
-        id_to_token = {}
-        for i in range(len(self.vocab)):
-            token_to_id[self.vocab[i]] =  i
-            id_to_token[i] = self.vocab[i]
-
-        with open(self.token_to_id_path, 'w') as file:
-            json.dump(token_to_id, file) 
-        self.token_to_id = token_to_id
-
-        with open(self.id_to_token_path, 'w') as file:
-            json.dump(id_to_token, file)
-        self.id_to_token = id_to_token
-
-        if os.path.exists(self.embeddings_path):
-            self.E = np.load(self.embeddings_path)
-        else:
-            self.E = np.random.normal(0, 0.02, (len(self.vocab), d_model))
-            np.save(self.embeddings_path, self.E)
-        
-        with open(self.rules_path, "w") as f:
-            json.dump(self.rules, f)
-
-        with open(self.vocab_path, "w") as f:
-            json.dump(self.vocab, f)
 
     def tokenize(self, input_str):
         tokens = self.characterize(input_str, self.protected_tokens)
@@ -185,8 +134,8 @@ class Tokenizer:
     def decode(self, input_nums):
         return [self.id_to_token[str(i)] for i in input_nums]
     
-    def embed(self, encoded):
-        X = np.array([self.E[i] for i in encoded])
+    def embed(self, encoded, E):
+        X = np.array([E[i] for i in encoded])
         return X
 
     def positional(self, encoded):

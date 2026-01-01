@@ -15,19 +15,16 @@ class Preprocessor:
         endindex = meditations.index("APPENDIX")
         meditations = meditations[:endindex] 
 
-        book_name = r"THE [A-Z]+ BOOK"
-        section_name = r"\n[IVXLCDM]+\. "
-        whitespace = r"[\n]+"
+        book_name = r"THE\s+[A-Z]+\s+BOOK\s+[IVXLCDM]+\.\s"
+        section_name = r"\n\n[IVXLCDM]+\. "
         underline = r"[_]+"
-        asterix = r"[*]+"
-        ae = r"[œ]"
+        book_end = r"\n\n\n\n"
 
-        meditations = re.sub(book_name, "", meditations)
-        meditations = re.sub(whitespace, "\n", meditations)
-        meditations = re.sub(section_name, "\n\n", meditations)
+
+        meditations = re.sub(book_name, "<BEGIN>\n", meditations)
+        meditations = re.sub(book_end, "<END> ", meditations)
+        meditations = re.sub(section_name, "\n<END>\n<BEGIN>\n", meditations)
         meditations = re.sub(underline, "", meditations)
-        meditations = re.sub(asterix, "", meditations)
-        meditations = re.sub(ae, "ae", meditations)
 
         for i in range(len(greekwords)):
             meditations = meditations.replace(greekwords[i], greek_transliteration[i])
